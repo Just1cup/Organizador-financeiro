@@ -1,0 +1,132 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fluxo}
+      POSTGRES_USER: ${POSTGRES_USER:-fluxo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fluxo-local}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fluxo} -d ${POSTGRES_DB:-fluxo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-fluxo}:${POSTGRES_PASSWORD:-fluxo-local}@postgres:5432/${POSTGRES_DB:-fluxo}
+      SESSION_SECRET: ${SESSION_SECRET:-development-only-change-this-secret}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_TEXT_MODEL: ${OLLAMA_TEXT_MODEL:-qwen3:8b}
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:7b}
+      WHATSAPP_URL: http://whatsapp:3101
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-development-internal-token}
+      MONTHLY_SALARY_CENTS: ${MONTHLY_SALARY_CENTS:-300000}
+      APP_TIME_ZONE: ${APP_TIME_ZONE:-America/Sao_Paulo}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/data/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  whatsapp:
+    build:
+      context: .
+      dockerfile: apps/whatsapp/Dockerfile
+    restart: unless-stopped
+    environment:
+      API_ORIGIN: http://api:3000
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-development-internal-token}
+      WHATSAPP_DATA_DIR: /app/data/session
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - whatsapp_session:/app/data/session
+    shm_size: 1gb
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "0"
+      OLLAMA_NUM_PARALLEL: "1"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  ollama-setup:
+    image: ollama/ollama:latest
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        echo '[ollama] verificando modelo de texto';
+        ollama pull "$${OLLAMA_TEXT_MODEL}";
+        echo '[ollama] modelo de texto pronto';
+        ollama pull "$${OLLAMA_VISION_MODEL}";
+        echo '[ollama] modelo de visão pronto'
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_TEXT_MODEL: ${OLLAMA_TEXT_MODEL:-qwen3:8b}
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:7b}
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    environment:
+      APP_HOST: ${APP_HOST:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  whatsapp_session:
+  ollama_models:
+  uploads:
+  caddy_data:
+  caddy_config:
