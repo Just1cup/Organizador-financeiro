@@ -205,7 +205,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         const category = await resolveTransactionCategory(client, { description: row.description, merchant: row.merchant, category: row.category });
         const fingerprint = transactionFingerprint(row);
         const saved = await client.query(`INSERT INTO transactions(import_id,source,external_id,fingerprint,description,merchant,amount_cents,occurred_at,payment_method,category,raw)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(fingerprint) DO NOTHING`,
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING`,
           [imported.rows[0].id, row.source, row.externalId, fingerprint, row.description, row.merchant, row.amountCents, row.occurredAt, row.paymentMethod, category, row.raw]);
         inserted += saved.rowCount || 0;
       }
