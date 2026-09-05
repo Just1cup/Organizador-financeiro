@@ -447,7 +447,7 @@ input, select { color-scheme: dark; }
 .auth-footnote svg { color: var(--mint); }
 
 /* Categorias */
-.category-chip { display: inline-flex; max-width: 100%; padding: 1px 0; overflow: hidden; color: var(--muted); border: 0; background: transparent; font: inherit; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.category-chip { display: inline-flex; flex: 0 1 auto; min-width: 4ch; max-width: 100%; padding: 1px 0; overflow: hidden; color: var(--muted); border: 0; background: transparent; font: inherit; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .category-chip:hover { color: var(--mint); text-decoration: underline; }
 .category-picker { min-height: 28px; max-width: 220px; padding: 3px 6px; color: var(--text); border: 1px solid var(--line); border-radius: 7px; background: #0b1723; font-size: 11px; }
 .category-picker.compact { min-height: 22px; padding: 1px 4px; font-size: 9px; }
@@ -491,7 +491,7 @@ input, select { color-scheme: dark; }
   .transaction-date { display: inline; }
   .ledger-head { min-height: 38px; display: grid; grid-template-columns: minmax(0, 1fr) 100px 140px 44px; align-items: center; gap: 10px; padding: 0 8px 0 62px; color: var(--muted); border-bottom: 1px solid var(--line-soft); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
   .ledger-head span:nth-child(3) { text-align: right; }
-  .ledger-row { grid-template-columns: 40px minmax(0, 1fr) 150px 44px; }
+  .ledger-row { grid-template-columns: 20px 40px minmax(0, 1fr) 150px 44px; }
   .ledger-amount { font-size: 13px; }
   .source-cards, .goal-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -543,7 +543,7 @@ input, select { color-scheme: dark; }
   .global-error { margin-inline: 54px; }
   .category-layout { grid-template-columns: 180px minmax(0, 1fr); }
   .donut { width: 164px; }
-  .ledger-row { grid-template-columns: 42px minmax(0, 1fr) 180px 48px; padding-inline: 14px 8px; }
+  .ledger-row { grid-template-columns: 20px 42px minmax(0, 1fr) 180px 48px; padding-inline: 14px 8px; }
 }
 
 @media (max-width: 599px) {
