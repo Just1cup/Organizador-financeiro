@@ -199,10 +199,21 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
 
   async function undoDelete(ids: string[]) {
     try {
+      let restored = ids.length;
+      let conflicted = 0;
       if (ids.length === 1) await api(`/transactions/${ids[0]}/restore`, { method: "POST" });
-      else await api("/transactions/bulk-restore", { method: "POST", body: JSON.stringify({ ids }) });
+      else {
+        const result = await api<{ restored: number; conflicted: number }>("/transactions/bulk-restore", { method: "POST", body: JSON.stringify({ ids }) });
+        restored = result.restored;
+        conflicted = result.conflicted;
+      }
       await load();
-      setToast({ tone: "success", text: ids.length === 1 ? "Lançamento restaurado." : `${ids.length} lançamentos restaurados.` });
+      setToast({
+        tone: conflicted ? "error" : "success",
+        text: conflicted
+          ? `${restored} restaurados; ${conflicted} não voltaram porque já existe um lançamento ativo igual.`
+          : restored === 1 ? "Lançamento restaurado." : `${restored} lançamentos restaurados.`
+      });
       void Promise.resolve(onChanged()).catch(() => undefined);
     } catch (cause) {
       setToast({ tone: "error", text: cause instanceof Error ? cause.message : "Não foi possível desfazer a exclusão." });
@@ -270,21 +281,31 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
     setBulkDeleteOpen(true);
   }
 
-  const selectedItems = filtered.filter((item) => selectedIds.has(item.id));
+  // Derivado de `items`, não de `filtered`: a seleção sobrevive à troca de filtro, então o que o
+  // diálogo mostra (contagem, saldo, aviso do salário) precisa refletir tudo o que será excluído,
+  // e não apenas a parte visível no filtro atual.
+  const selectedItems = (items || []).filter((item) => selectedIds.has(item.id));
   const selectedTotal = selectedItems.reduce((total, item) => total + item.amount_cents, 0);
   const selectedIncludesSalary = selectedItems.some((item) => item.external_id?.startsWith("recurring:salary:"));
+  const selectedOutsideFilter = selectedItems.length - filtered.filter((item) => selectedIds.has(item.id)).length;
 
   async function bulkDelete() {
     if (!selectedIds.size) return;
     setBulkBusy(true); setBulkError("");
     try {
       const ids = [...selectedIds];
-      const result = await api<{ deleted: number }>("/transactions/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) });
-      const removed = new Set(ids);
+      // A autoridade sobre o que foi de fato excluído é o servidor: ele pula linhas que já
+      // estavam excluídas (outra aba, ingestão do WhatsApp) e devolve só os ids acionados.
+      const result = await api<{ deleted: number; ids: string[] }>("/transactions/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) });
+      const removed = new Set(result.ids);
       setItems((current) => current?.filter((item) => !removed.has(item.id)) ?? []);
       setSelectedIds(new Set());
       setBulkDeleteOpen(false);
-      setToast({ tone: "success", text: `${result.deleted} ${result.deleted === 1 ? "lançamento excluído" : "lançamentos excluídos"} com sucesso.`, onUndo: () => void undoDelete(ids) });
+      setToast({
+        tone: "success",
+        text: `${result.deleted} ${result.deleted === 1 ? "lançamento excluído" : "lançamentos excluídos"} com sucesso.`,
+        onUndo: result.ids.length ? () => void undoDelete(result.ids) : undefined
+      });
       void Promise.resolve(onChanged()).catch(() => undefined);
     } catch (cause) {
       setBulkError(cause instanceof Error ? cause.message : "Não foi possível excluir os lançamentos selecionados.");
@@ -355,7 +376,7 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
       open={bulkDeleteOpen}
       title={`Excluir ${selectedIds.size} ${selectedIds.size === 1 ? "lançamento" : "lançamentos"}?`}
       confirmLabel={`Excluir ${selectedIds.size}`}
-      description={`${selectedIds.size} ${selectedIds.size === 1 ? "lançamento será removido" : "lançamentos serão removidos"} dos seus totais (saldo ${money(selectedTotal)}). Um registro de auditoria é preservado para cada um.${selectedIncludesSalary ? " O salário mensal recorrente continuará programado para os próximos meses." : ""}${hasMore ? " Há lançamentos mais antigos ainda não carregados; eles não serão afetados." : ""}`}
+      description={`${selectedIds.size} ${selectedIds.size === 1 ? "lançamento será removido" : "lançamentos serão removidos"} dos seus totais (saldo ${money(selectedTotal)}). Um registro de auditoria é preservado para cada um.${selectedOutsideFilter > 0 ? ` ${selectedOutsideFilter} ${selectedOutsideFilter === 1 ? "deles está selecionado mas não aparece" : "deles estão selecionados mas não aparecem"} nos filtros atuais.` : ""}${selectedIncludesSalary ? " O salário mensal recorrente continuará programado para os próximos meses." : ""}${hasMore ? " Há lançamentos mais antigos ainda não carregados; eles não serão afetados." : ""}`}
       busy={bulkBusy}
       error={bulkError}
       onClose={() => { if (!bulkBusy) { setBulkDeleteOpen(false); setBulkError(""); } }}

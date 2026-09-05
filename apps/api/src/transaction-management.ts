@@ -99,6 +99,15 @@ export async function softDeleteTransaction(client: PoolClient, id: string, admi
 }
 
 export async function restoreTransaction(client: PoolClient, id: string, adminId: string): Promise<{ id: string } | null> {
+  const target = await client.query("SELECT fingerprint FROM transactions WHERE id=$1 AND deleted_at IS NOT NULL FOR UPDATE", [id]);
+  if (!target.rowCount) return null;
+  // A unicidade de fingerprint vale só entre lançamentos ativos (índice parcial em db.ts), então
+  // é possível que o mesmo lançamento tenha sido reimportado enquanto este estava excluído.
+  // Sem esta checagem, o UPDATE abaixo violaria a constraint e o 23505 subiria cru como 500.
+  const conflict = await client.query("SELECT id FROM transactions WHERE fingerprint=$1 AND deleted_at IS NULL AND id<>$2 LIMIT 1", [target.rows[0].fingerprint, id]);
+  if (conflict.rowCount) {
+    throw Object.assign(new Error("Já existe um lançamento ativo com os mesmos dados; exclua-o antes de restaurar este."), { statusCode: 409 });
+  }
   const restored = await client.query(`UPDATE transactions SET deleted_at=NULL,updated_at=now()
     WHERE id=$1 AND deleted_at IS NOT NULL RETURNING id,source,description,amount_cents,occurred_at,category`, [id]);
   if (!restored.rowCount) return null;

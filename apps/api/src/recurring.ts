@@ -55,7 +55,10 @@ export function monthPeriod(month: string, timeZone: string, now: Date): Current
   const nextYear = monthNumber === 12 ? year + 1 : year;
   const startAt = zonedDateToUtc(year, monthNumber, 1, timeZone);
   const endAt = zonedDateToUtc(nextYear, nextMonth, 1, timeZone);
-  const asOf = new Date(Math.min(endAt.getTime(), now.getTime()));
+  // endAt de um mês é exatamente o startAt do mês seguinte, e as consultas do dashboard usam
+  // `occurred_at <= asOf` (inclusivo). Sem o -1ms, um lançamento na virada — como o salário
+  // automático, que sempre cai em startAt — seria contado nos dois meses.
+  const asOf = new Date(Math.min(endAt.getTime() - 1, now.getTime()));
   return { month, startAt: startAt.toISOString(), endAt: endAt.toISOString(), asOf: asOf.toISOString() };
 }
 

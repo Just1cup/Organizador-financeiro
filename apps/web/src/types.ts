@@ -33,6 +33,7 @@ export type DashboardData = {
   goals: Goal[];
   recent: Transaction[];
   pending_reconciliations: number;
+  is_current_month: boolean;
 };
 export type Category = { name: string; parent_name: string | null; keywords: string[]; is_system: boolean; transaction_count: number };
 export type MergeSuggestion = { names: string[]; reason: string };

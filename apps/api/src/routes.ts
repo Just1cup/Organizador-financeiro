@@ -131,7 +131,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/dashboard", { preHandler: requireAuth }, async (request) => {
     const { month } = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }).parse(request.query);
-    const period = month ? monthPeriod(month, config.APP_TIME_ZONE, new Date()) : currentMonthPeriod(new Date(), config.APP_TIME_ZONE);
+    const now = new Date();
+    const current = currentMonthPeriod(now, config.APP_TIME_ZONE);
+    const period = month ? monthPeriod(month, config.APP_TIME_ZONE, now) : current;
     const [context, budgets, goals, recent, pending] = await Promise.all([
       financialContext(period),
       pool.query(`SELECT b.category, b.limit_cents, COALESCE(ABS(SUM(t.amount_cents)),0) spent_cents
@@ -139,7 +141,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         AND t.deleted_at IS NULL AND t.occurred_at >= $1 AND t.occurred_at <= $2
         GROUP BY b.category,b.limit_cents ORDER BY b.category`, [period.startAt, period.asOf]),
       pool.query("SELECT * FROM goals ORDER BY created_at DESC"),
-      pool.query("SELECT id,source,external_id,description,merchant,amount_cents,occurred_at,payment_method,category FROM transactions WHERE merged_into IS NULL AND deleted_at IS NULL AND occurred_at <= $1 ORDER BY occurred_at DESC LIMIT 8", [period.asOf]),
+      pool.query(`SELECT id,source,external_id,description,merchant,amount_cents,occurred_at,payment_method,category
+        FROM transactions WHERE merged_into IS NULL AND deleted_at IS NULL
+        AND occurred_at >= $1 AND occurred_at <= $2 ORDER BY occurred_at DESC LIMIT 8`, [period.startAt, period.asOf]),
       pool.query(`SELECT COUNT(*) count FROM transactions a
         JOIN transactions b ON a.id < b.id AND a.source <> b.source AND a.merged_into IS NULL AND b.merged_into IS NULL
         WHERE a.deleted_at IS NULL AND b.deleted_at IS NULL AND ABS(a.amount_cents)=ABS(b.amount_cents)
@@ -150,7 +154,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       budgets: budgets.rows.map((row) => ({ ...row, limit_cents: cents(row.limit_cents), spent_cents: cents(row.spent_cents) })),
       goals: goals.rows.map((row) => ({ ...row, target_cents: cents(row.target_cents), current_cents: cents(row.current_cents) })),
       recent: recent.rows.map((row) => ({ ...row, amount_cents: cents(row.amount_cents) })),
-      pending_reconciliations: cents(pending.rows[0].count)
+      pending_reconciliations: cents(pending.rows[0].count),
+      // Quem decide se este é o mês corrente é o servidor, que conhece APP_TIME_ZONE; o cliente
+      // comparando contra UTC erraria na virada do mês.
+      is_current_month: period.month === current.month
     };
   });
 
@@ -255,15 +262,23 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/transactions/bulk-restore", { preHandler: requireAuth }, async (request) => {
     const input = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).strict().parse(request.body);
-    const restoredIds = await transaction(async (client) => {
+    const result = await transaction(async (client) => {
       const ids: string[] = [];
+      const conflicted: string[] = [];
       for (const id of input.ids) {
-        const outcome = await restoreTransaction(client, id, request.adminId!);
-        if (outcome) ids.push(outcome.id);
+        try {
+          const outcome = await restoreTransaction(client, id, request.adminId!);
+          if (outcome) ids.push(outcome.id);
+        } catch (error) {
+          // Um lançamento que voltou a existir por reimportação não deve derrubar o lote inteiro:
+          // registramos o conflito e seguimos restaurando o restante.
+          if ((error as { statusCode?: number }).statusCode !== 409) throw error;
+          conflicted.push(id);
+        }
       }
-      return ids;
+      return { ids, conflicted };
     });
-    return { ok: true, restored: restoredIds.length, ids: restoredIds };
+    return { ok: true, restored: result.ids.length, ids: result.ids, conflicted: result.conflicted.length };
   });
 
   app.get("/reconciliations/candidates", { preHandler: requireAuth }, async () => {

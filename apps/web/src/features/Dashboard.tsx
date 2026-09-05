@@ -75,8 +75,9 @@ export function Dashboard({
 }) {
   const { summary } = data;
   const monthNet = summary.income_cents - summary.expense_cents;
-  const todayMonth = new Date().toISOString().slice(0, 7);
-  const isCurrentMonth = data.month >= todayMonth;
+  // Quem sabe qual é o mês corrente é o servidor (que conhece APP_TIME_ZONE); comparar aqui
+  // contra o mês em UTC erraria na virada, habilitando "próximo mês" para um mês futuro.
+  const isCurrentMonth = data.is_current_month;
 
   return <div className="screen dashboard-screen">
     <header className="page-header dashboard-heading">

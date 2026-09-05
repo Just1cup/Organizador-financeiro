@@ -2,13 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import { currentMonthPeriod, ensureMonthlySalary, monthlySalaryOccurrence, monthPeriod, type Queryable } from "./recurring.js";
 
 describe("monthPeriod", () => {
-  it("usa o fim do próprio mês como asOf quando o mês já encerrou", () => {
+  it("usa o fim do próprio mês como asOf quando o mês já encerrou, sem alcançar a virada", () => {
     expect(monthPeriod("2026-07", "America/Sao_Paulo", new Date("2026-09-05T12:00:00.000Z"))).toEqual({
       month: "2026-07",
       startAt: "2026-07-01T03:00:00.000Z",
       endAt: "2026-08-01T03:00:00.000Z",
-      asOf: "2026-08-01T03:00:00.000Z"
+      asOf: "2026-08-01T02:59:59.999Z"
     });
+  });
+
+  it("não deixa o asOf de um mês encostar no startAt do mês seguinte", () => {
+    const july = monthPeriod("2026-07", "America/Sao_Paulo", new Date("2026-09-05T12:00:00.000Z"));
+    const august = monthPeriod("2026-08", "America/Sao_Paulo", new Date("2026-09-05T12:00:00.000Z"));
+    expect(Date.parse(july.asOf)).toBeLessThan(Date.parse(august.startAt));
   });
 
   it("trava asOf em now para o mês atual, sem contar lançamentos futuros", () => {

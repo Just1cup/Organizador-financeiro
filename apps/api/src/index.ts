@@ -13,7 +13,16 @@ import { warmOllama } from "./ollama.js";
 
 const allowedOrigins = [`https://${config.APP_HOST}`, `http://${config.APP_HOST}`];
 
-const app = Fastify({ logger: true, bodyLimit: 26 * 1024 * 1024, trustProxy: true });
+// Confiamos apenas no hop imediato (o Caddy), nunca no X-Forwarded-For inteiro. Com
+// `trustProxy: true`, o proxy-addr aceitaria a entrada mais à esquerda do header — controlada
+// pelo cliente —, e bastaria rotacioná-la para trocar de bucket a cada request e anular o
+// rate limit de 5/min do /auth/login. Confiando só no hop 0, request.ip é sempre o valor que
+// o Caddy anexa: o IP real de quem conectou.
+const app = Fastify({
+  logger: true,
+  bodyLimit: 26 * 1024 * 1024,
+  trustProxy: (_address: string, hop: number) => hop === 0
+});
 await app.register(cookie);
 await app.register(cors, { origin: allowedOrigins, credentials: true });
 await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
