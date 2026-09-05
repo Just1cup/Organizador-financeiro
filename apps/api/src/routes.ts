@@ -7,7 +7,7 @@ import { parseCsv } from "./csv.js";
 import { pool, transaction } from "./db.js";
 import { explainFinancialContext, ollamaStatus } from "./ollama.js";
 import { config } from "./config.js";
-import { currentMonthPeriod, type CurrentMonthPeriod } from "./recurring.js";
+import { currentMonthPeriod, monthPeriod, type CurrentMonthPeriod } from "./recurring.js";
 import {
   buildManualTransaction,
   insertManualTransaction,
@@ -129,8 +129,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(result.inserted ? 201 : 200).send(result);
   });
 
-  app.get("/dashboard", { preHandler: requireAuth }, async () => {
-    const period = currentMonthPeriod(new Date(), config.APP_TIME_ZONE);
+  app.get("/dashboard", { preHandler: requireAuth }, async (request) => {
+    const { month } = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }).parse(request.query);
+    const period = month ? monthPeriod(month, config.APP_TIME_ZONE, new Date()) : currentMonthPeriod(new Date(), config.APP_TIME_ZONE);
     const [context, budgets, goals, recent, pending] = await Promise.all([
       financialContext(period),
       pool.query(`SELECT b.category, b.limit_cents, COALESCE(ABS(SUM(t.amount_cents)),0) spent_cents

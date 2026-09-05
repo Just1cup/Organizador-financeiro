@@ -68,6 +68,12 @@ input, select { color-scheme: dark; }
 .page-header > div:first-child { min-width: 0; }
 .page-header h1 { margin: 0; font-size: clamp(26px, 4vw, 34px); line-height: 1.12; letter-spacing: -.035em; }
 .page-header p { display: flex; align-items: center; gap: 7px; margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.month-nav { display: flex; align-items: center; gap: 4px; margin-top: 7px; }
+.month-nav p { margin: 0; }
+.month-nav > button:not(.text-button) { width: 30px; height: 30px; display: grid; place-items: center; color: var(--muted-strong); border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); cursor: pointer; }
+.month-nav > button:not(.text-button):hover:not(:disabled) { color: var(--text); border-color: var(--mint); }
+.month-nav > button:not(.text-button):disabled { opacity: .4; cursor: not-allowed; }
+.month-nav .text-button { margin-left: 4px; }
 .page-primary { flex: 0 0 auto; }
 .service-state { min-height: 36px; display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; color: var(--mint); border: 1px solid rgba(98, 220, 174, .2); border-radius: 9px; background: var(--mint-soft); font-size: 11px; font-weight: 750; white-space: nowrap; }
 .section-title { min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 26px 0 12px; }

@@ -16,19 +16,21 @@ export function App() {
   const [auth, setAuth] = useState<AuthState>("loading");
   const [tab, setTab] = useState<Tab>("overview");
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [dashboardMonth, setDashboardMonth] = useState<string | null>(null);
   const [ai, setAi] = useState<AiStatus | null>(null);
   const [error, setError] = useState("");
   const [openCreateSignal, setOpenCreateSignal] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      const [nextDashboard, nextAi] = await Promise.all([api<DashboardData>("/dashboard"), api<AiStatus>("/ai/status")]);
+      const query = dashboardMonth ? `?month=${dashboardMonth}` : "";
+      const [nextDashboard, nextAi] = await Promise.all([api<DashboardData>(`/dashboard${query}`), api<AiStatus>("/ai/status")]);
       setDashboard(nextDashboard); setAi(nextAi); setError("");
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401) setAuth("login");
       else setError(cause instanceof Error ? cause.message : "Não foi possível carregar seus dados");
     }
-  }, []);
+  }, [dashboardMonth]);
 
   useEffect(() => {
     api<{ initialized: boolean; authenticated: boolean }>("/auth/status")
@@ -54,13 +56,27 @@ export function App() {
     setTab("transactions");
   }
 
+  function changeMonth(delta: number) {
+    const base = dashboardMonth ?? dashboard?.month;
+    if (!base) return;
+    const [year, month] = base.split("-").map(Number);
+    const target = new Date(Date.UTC(year, month - 1 + delta, 1));
+    setDashboardMonth(`${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+
   if (auth === "loading") return <div className="boot"><span className="brand-mark">✦</span><Spinner label="Iniciando Fluxo AI"/></div>;
   if (auth === "setup" || auth === "login") return <AuthScreen initialized={auth === "login"} onSuccess={() => setAuth("authenticated")}/>;
   if (!dashboard) return <div className="boot">{error ? <><p>{error}</p><button className="button primary" onClick={load}>Tentar novamente</button></> : <Spinner label="Organizando suas finanças"/>}</div>;
 
   return <AppShell tab={tab} onTab={setTab} reconciliationCount={dashboard.pending_reconciliations} onLogout={() => void logout()}>
     {error ? <div className="global-error" role="alert">{error}<button onClick={load}>Tentar novamente</button></div> : null}
-    {tab === "overview" ? <Dashboard data={dashboard} onNavigate={setTab} onNewTransaction={newTransaction}/> : null}
+    {tab === "overview" ? <Dashboard
+      data={dashboard}
+      onNavigate={setTab}
+      onNewTransaction={newTransaction}
+      onChangeMonth={changeMonth}
+      onResetMonth={dashboardMonth ? () => setDashboardMonth(null) : undefined}
+    /> : null}
     {tab === "transactions" ? <Transactions onChanged={load} openCreateSignal={openCreateSignal}/> : null}
     {tab === "reconciliation" ? <Reconciliation onChanged={load}/> : null}
     {tab === "assistant" ? <Assistant status={ai} dashboard={dashboard}/> : null}

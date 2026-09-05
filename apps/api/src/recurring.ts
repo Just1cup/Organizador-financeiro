@@ -41,16 +41,27 @@ function zonedDateToUtc(year: number, month: number, day: number, timeZone: stri
   return new Date(utc);
 }
 
+// Período de um mês qualquer ("YYYY-MM"), não só o atual — usado pela navegação de meses
+// da Visão geral. Para o mês atual (ou um mês futuro, o que não deveria acontecer na UI),
+// asOf fica travado em "now" para não contar lançamentos futuros; para um mês já encerrado,
+// asOf vira o próprio fim do mês (min(endAt, now) resolve os dois casos).
+export function monthPeriod(month: string, timeZone: string, now: Date): CurrentMonthPeriod {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) throw Object.assign(new Error(`Mês inválido: ${month}`), { statusCode: 400 });
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+  if (monthNumber < 1 || monthNumber > 12) throw Object.assign(new Error(`Mês inválido: ${month}`), { statusCode: 400 });
+  const nextMonth = monthNumber === 12 ? 1 : monthNumber + 1;
+  const nextYear = monthNumber === 12 ? year + 1 : year;
+  const startAt = zonedDateToUtc(year, monthNumber, 1, timeZone);
+  const endAt = zonedDateToUtc(nextYear, nextMonth, 1, timeZone);
+  const asOf = new Date(Math.min(endAt.getTime(), now.getTime()));
+  return { month, startAt: startAt.toISOString(), endAt: endAt.toISOString(), asOf: asOf.toISOString() };
+}
+
 export function currentMonthPeriod(now: Date, timeZone: string): CurrentMonthPeriod {
   const parts = zonedParts(now, timeZone);
-  const nextMonth = parts.month === 12 ? 1 : parts.month + 1;
-  const nextYear = parts.month === 12 ? parts.year + 1 : parts.year;
-  return {
-    month: `${parts.year}-${String(parts.month).padStart(2, "0")}`,
-    startAt: zonedDateToUtc(parts.year, parts.month, 1, timeZone).toISOString(),
-    endAt: zonedDateToUtc(nextYear, nextMonth, 1, timeZone).toISOString(),
-    asOf: now.toISOString()
-  };
+  return monthPeriod(`${parts.year}-${String(parts.month).padStart(2, "0")}`, timeZone, now);
 }
 
 export function monthlySalaryOccurrence(now: Date, timeZone: string): { month: string; occurredAt: string } {

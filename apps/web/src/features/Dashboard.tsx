@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Bot,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   CircleDollarSign,
   Plus,
@@ -62,18 +63,32 @@ function CategoryOverview({ data }: { data: DashboardData }) {
 export function Dashboard({
   data,
   onNavigate,
-  onNewTransaction
+  onNewTransaction,
+  onChangeMonth,
+  onResetMonth
 }: {
   data: DashboardData;
   onNavigate: (page: "assistant" | "sources" | "transactions") => void;
   onNewTransaction: () => void;
+  onChangeMonth: (delta: number) => void;
+  onResetMonth?: () => void;
 }) {
   const { summary } = data;
   const monthNet = summary.income_cents - summary.expense_cents;
+  const todayMonth = new Date().toISOString().slice(0, 7);
+  const isCurrentMonth = data.month >= todayMonth;
 
   return <div className="screen dashboard-screen">
     <header className="page-header dashboard-heading">
-      <div><h1>Visão geral</h1><p><CalendarDays size={16}/> {monthLabel(data.month)} · dados sincronizados</p></div>
+      <div>
+        <h1>Visão geral</h1>
+        <div className="month-nav">
+          <button type="button" aria-label="Mês anterior" onClick={() => onChangeMonth(-1)}><ChevronLeft size={16}/></button>
+          <p><CalendarDays size={16}/> {monthLabel(data.month)}</p>
+          <button type="button" aria-label="Próximo mês" disabled={isCurrentMonth} onClick={() => onChangeMonth(1)}><ChevronRight size={16}/></button>
+          {onResetMonth ? <button className="text-button" type="button" onClick={onResetMonth}>Mês atual</button> : null}
+        </div>
+      </div>
       <button className="button primary page-primary" type="button" onClick={onNewTransaction}><Plus size={19}/> Novo lançamento</button>
     </header>
 
