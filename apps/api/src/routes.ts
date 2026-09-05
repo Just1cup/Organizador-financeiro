@@ -231,6 +231,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true, id: result.id };
   });
 
+  app.post("/transactions/bulk-delete", { preHandler: requireAuth }, async (request) => {
+    const input = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).strict().parse(request.body);
+    const deletedIds = await transaction(async (client) => {
+      const ids: string[] = [];
+      for (const id of input.ids) {
+        const outcome = await softDeleteTransaction(client, id, request.adminId!);
+        if (outcome) ids.push(outcome.id);
+      }
+      return ids;
+    });
+    return { ok: true, deleted: deletedIds.length, ids: deletedIds };
+  });
+
   app.get("/reconciliations/candidates", { preHandler: requireAuth }, async () => {
     const result = await pool.query(`SELECT id,source,description,merchant,amount_cents,occurred_at,payment_method,category FROM transactions
       WHERE merged_into IS NULL AND deleted_at IS NULL AND occurred_at >= now() - interval '60 days' ORDER BY occurred_at DESC LIMIT 300`);

@@ -35,17 +35,26 @@ function normalizeSearch(value: string): string {
 }
 
 function LedgerRow({
-  item, categories, onDelete, onCategoryChange, onCategoryCreated
+  item, categories, selected, onToggleSelect, onDelete, onCategoryChange, onCategoryCreated
 }: {
   item: Transaction;
   categories: Category[];
+  selected: boolean;
+  onToggleSelect: (item: Transaction) => void;
   onDelete: (item: Transaction) => void;
   onCategoryChange: (item: Transaction, category: string) => void;
   onCategoryCreated: () => void;
 }) {
   const income = item.amount_cents > 0;
   const [editingCategory, setEditingCategory] = useState(false);
-  return <li className={`ledger-row ${income ? "income" : "expense"}`}>
+  return <li className={`ledger-row ${income ? "income" : "expense"} ${selected ? "selected" : ""}`}>
+    <input
+      type="checkbox"
+      className="ledger-select"
+      checked={selected}
+      onChange={() => onToggleSelect(item)}
+      aria-label={`Selecionar ${item.description}, ${money(Math.abs(item.amount_cents))}`}
+    />
     <span className="ledger-icon" aria-hidden="true">{income ? <ArrowDownLeft size={19}/> : <ArrowUpRight size={19}/>}</span>
     <span className="ledger-copy">
       <strong>{item.description}</strong>
@@ -82,6 +91,10 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState("");
 
   const load = useCallback(async () => {
     setError("");
@@ -189,6 +202,7 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
     try {
       await api(`/transactions/${pendingDelete.id}`, { method: "DELETE" });
       setItems((current) => current?.filter((item) => item.id !== pendingDelete.id) ?? []);
+      setSelectedIds((current) => { if (!current.has(pendingDelete.id)) return current; const next = new Set(current); next.delete(pendingDelete.id); return next; });
       setToast({ tone: "success", text: "Lançamento excluído com sucesso." });
       setPendingDelete(null);
       void Promise.resolve(onChanged()).catch(() => undefined);
@@ -213,6 +227,58 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
 
   const recurringSalary = pendingDelete?.external_id?.startsWith("recurring:salary:") ?? false;
 
+  function toggleSelect(item: Transaction) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+      return next;
+    });
+  }
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every((item) => selectedIds.has(item.id));
+
+  function toggleSelectAllFiltered() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) filtered.forEach((item) => next.delete(item.id));
+      else filtered.forEach((item) => next.add(item.id));
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function requestDeleteAll() {
+    setSelectedIds(new Set(filtered.map((item) => item.id)));
+    setBulkError("");
+    setBulkDeleteOpen(true);
+  }
+
+  const selectedItems = filtered.filter((item) => selectedIds.has(item.id));
+  const selectedTotal = selectedItems.reduce((total, item) => total + item.amount_cents, 0);
+  const selectedIncludesSalary = selectedItems.some((item) => item.external_id?.startsWith("recurring:salary:"));
+
+  async function bulkDelete() {
+    if (!selectedIds.size) return;
+    setBulkBusy(true); setBulkError("");
+    try {
+      const ids = [...selectedIds];
+      const result = await api<{ deleted: number }>("/transactions/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) });
+      const removed = new Set(ids);
+      setItems((current) => current?.filter((item) => !removed.has(item.id)) ?? []);
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+      setToast({ tone: "success", text: `${result.deleted} ${result.deleted === 1 ? "lançamento excluído" : "lançamentos excluídos"} com sucesso.` });
+      void Promise.resolve(onChanged()).catch(() => undefined);
+    } catch (cause) {
+      setBulkError(cause instanceof Error ? cause.message : "Não foi possível excluir os lançamentos selecionados.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   return <div className="screen transactions-screen">
     <header className="page-header transactions-header">
       <div><span className="page-icon" aria-hidden="true"><ReceiptText size={21}/></span><div><h1>Lançamentos</h1><p>Acompanhe e ajuste todas as movimentações em um só lugar.</p></div></div>
@@ -232,7 +298,17 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
     <div className="ledger-summary" aria-live="polite">
       <span><strong>{filtered.length}</strong> {filtered.length === 1 ? "lançamento" : "lançamentos"}</span>
       <span>Resultado exibido <strong className={filteredBalance >= 0 ? "positive-text" : "danger-text"}>{money(filteredBalance)}</strong></span>
+      {filtered.length ? <button className="text-button" type="button" onClick={requestDeleteAll}><Trash2 size={14}/>Excluir todos</button> : null}
     </div>
+
+    {selectedIds.size ? <div className="selection-bar" role="status">
+      <label className="selection-all"><input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAllFiltered}/> Selecionar todos os {filtered.length} filtrados</label>
+      <span><strong>{selectedIds.size}</strong> {selectedIds.size === 1 ? "selecionado" : "selecionados"} · <strong className={selectedTotal >= 0 ? "positive-text" : "danger-text"}>{money(selectedTotal)}</strong></span>
+      <div className="selection-actions">
+        <button className="text-button" type="button" onClick={clearSelection}>Limpar seleção</button>
+        <button className="button danger" type="button" onClick={() => { setBulkError(""); setBulkDeleteOpen(true); }}><Trash2 size={16}/>Excluir selecionados</button>
+      </div>
+    </div> : filtered.length ? <label className="selection-all standalone"><input type="checkbox" checked={allFilteredSelected} onChange={toggleSelectAllFiltered}/> Selecionar todos os {filtered.length} filtrados</label> : null}
 
     {error ? <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => void load()}><RotateCw size={15}/> Tentar novamente</button></div> : null}
     {items === null ? <Spinner label="Carregando lançamentos"/> : filtered.length ? <Card className="transaction-ledger">
@@ -240,12 +316,14 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
         key={item.id}
         item={item}
         categories={availableCategories}
+        selected={selectedIds.has(item.id)}
+        onToggleSelect={toggleSelect}
         onDelete={(selected) => { setDeleteError(""); setPendingDelete(selected); }}
         onCategoryChange={(selected, next) => void changeCategory(selected, next)}
         onCategoryCreated={() => void loadCategories()}
       />)}</ul>
       {hasMore ? <div className="ledger-load-more"><button className="button secondary" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Carregando…" : "Carregar lançamentos anteriores"}</button></div> : null}
-    </Card> : items.length && hasFilters ? <EmptyState title="Nenhum resultado" text="Tente ajustar os filtros ou carregue registros mais antigos." action={<div className="empty-actions"><button className="text-button" type="button" onClick={clearFilters}>Limpar filtros</button>{hasMore ? <button className="text-button" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Carregando…" : "Buscar em registros antigos"}</button> : null}</div>}/> : <EmptyState title="Nenhum lançamento" text="Adicione uma entrada ou saída para começar a acompanhar sua movimentação." action={<button className="button primary" type="button" onClick={() => setCreateOpen(true)}><Plus size={17}/>Novo lançamento</button>}/>} 
+    </Card> : items.length && hasFilters ? <EmptyState title="Nenhum resultado" text="Tente ajustar os filtros ou carregue registros mais antigos." action={<div className="empty-actions"><button className="text-button" type="button" onClick={clearFilters}>Limpar filtros</button>{hasMore ? <button className="text-button" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Carregando…" : "Buscar em registros antigos"}</button> : null}</div>}/> : <EmptyState title="Nenhum lançamento" text="Adicione uma entrada ou saída para começar a acompanhar sua movimentação." action={<button className="button primary" type="button" onClick={() => setCreateOpen(true)}><Plus size={17}/>Novo lançamento</button>}/>}
 
     <TransactionForm open={createOpen} onClose={() => setCreateOpen(false)} onChanged={created}/>
     <ConfirmDialog
@@ -258,6 +336,16 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
       error={deleteError}
       onClose={() => { if (!deleteBusy) { setPendingDelete(null); setDeleteError(""); } }}
       onConfirm={() => void remove()}
+    />
+    <ConfirmDialog
+      open={bulkDeleteOpen}
+      title={`Excluir ${selectedIds.size} ${selectedIds.size === 1 ? "lançamento" : "lançamentos"}?`}
+      confirmLabel={`Excluir ${selectedIds.size}`}
+      description={`${selectedIds.size} ${selectedIds.size === 1 ? "lançamento será removido" : "lançamentos serão removidos"} dos seus totais (saldo ${money(selectedTotal)}). Um registro de auditoria é preservado para cada um.${selectedIncludesSalary ? " O salário mensal recorrente continuará programado para os próximos meses." : ""}${hasMore ? " Há lançamentos mais antigos ainda não carregados; eles não serão afetados." : ""}`}
+      busy={bulkBusy}
+      error={bulkError}
+      onClose={() => { if (!bulkBusy) { setBulkDeleteOpen(false); setBulkError(""); } }}
+      onConfirm={() => void bulkDelete()}
     />
 
     <div className={`toast-region ${toast ? "visible" : ""}`} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true">
