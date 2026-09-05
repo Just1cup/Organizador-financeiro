@@ -8,8 +8,9 @@ import { api, money } from "../lib/api";
 import type { Category, Transaction, TransactionKind } from "../types";
 
 type TypeFilter = "all" | TransactionKind;
-type Toast = { tone: "success" | "error"; text: string };
+type Toast = { tone: "success" | "error"; text: string; onUndo?: () => void };
 const PAGE_SIZE = 100;
+const UNDO_WINDOW_MS = 10_000;
 
 const SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
@@ -150,7 +151,7 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 4_000);
+    const timer = window.setTimeout(() => setToast(null), toast.onUndo ? UNDO_WINDOW_MS : 4_000);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
@@ -196,14 +197,27 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
     }
   }
 
+  async function undoDelete(ids: string[]) {
+    try {
+      if (ids.length === 1) await api(`/transactions/${ids[0]}/restore`, { method: "POST" });
+      else await api("/transactions/bulk-restore", { method: "POST", body: JSON.stringify({ ids }) });
+      await load();
+      setToast({ tone: "success", text: ids.length === 1 ? "Lançamento restaurado." : `${ids.length} lançamentos restaurados.` });
+      void Promise.resolve(onChanged()).catch(() => undefined);
+    } catch (cause) {
+      setToast({ tone: "error", text: cause instanceof Error ? cause.message : "Não foi possível desfazer a exclusão." });
+    }
+  }
+
   async function remove() {
     if (!pendingDelete) return;
     setDeleteBusy(true); setDeleteError("");
     try {
-      await api(`/transactions/${pendingDelete.id}`, { method: "DELETE" });
-      setItems((current) => current?.filter((item) => item.id !== pendingDelete.id) ?? []);
-      setSelectedIds((current) => { if (!current.has(pendingDelete.id)) return current; const next = new Set(current); next.delete(pendingDelete.id); return next; });
-      setToast({ tone: "success", text: "Lançamento excluído com sucesso." });
+      const id = pendingDelete.id;
+      await api(`/transactions/${id}`, { method: "DELETE" });
+      setItems((current) => current?.filter((item) => item.id !== id) ?? []);
+      setSelectedIds((current) => { if (!current.has(id)) return current; const next = new Set(current); next.delete(id); return next; });
+      setToast({ tone: "success", text: "Lançamento excluído com sucesso.", onUndo: () => void undoDelete([id]) });
       setPendingDelete(null);
       void Promise.resolve(onChanged()).catch(() => undefined);
     } catch (cause) {
@@ -270,7 +284,7 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
       setItems((current) => current?.filter((item) => !removed.has(item.id)) ?? []);
       setSelectedIds(new Set());
       setBulkDeleteOpen(false);
-      setToast({ tone: "success", text: `${result.deleted} ${result.deleted === 1 ? "lançamento excluído" : "lançamentos excluídos"} com sucesso.` });
+      setToast({ tone: "success", text: `${result.deleted} ${result.deleted === 1 ? "lançamento excluído" : "lançamentos excluídos"} com sucesso.`, onUndo: () => void undoDelete(ids) });
       void Promise.resolve(onChanged()).catch(() => undefined);
     } catch (cause) {
       setBulkError(cause instanceof Error ? cause.message : "Não foi possível excluir os lançamentos selecionados.");
@@ -349,7 +363,7 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
     />
 
     <div className={`toast-region ${toast ? "visible" : ""}`} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true">
-      {toast ? <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>{toast.tone === "success" ? <Check size={17}/> : null}<span>{toast.text}</span><button type="button" aria-label="Fechar aviso" onClick={() => setToast(null)}><X size={16}/></button></div> : null}
+      {toast ? <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>{toast.tone === "success" ? <Check size={17}/> : null}<span>{toast.text}</span>{toast.onUndo ? <button className="toast-undo" type="button" onClick={() => { toast.onUndo?.(); setToast(null); }}>Desfazer</button> : null}<button type="button" aria-label="Fechar aviso" onClick={() => setToast(null)}><X size={16}/></button></div> : null}
     </div>
   </div>;
 }

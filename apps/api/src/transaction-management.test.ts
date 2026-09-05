@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildManualTransaction,
   insertManualTransaction,
+  restoreTransaction,
   softDeleteTransaction,
   TransactionUpdateSchema
 } from "./transaction-management.js";
@@ -122,6 +123,33 @@ describe("mutações auditáveis de lançamentos", () => {
   it("não altera nem audita um lançamento ausente ou já excluído", async () => {
     const query = vi.fn().mockResolvedValueOnce({ rowCount: 0, rows: [] });
     await expect(softDeleteTransaction(
+      { query } as unknown as PoolClient,
+      "20384125-793f-42a3-b62e-dc54cadbf310",
+      "admin-1"
+    )).resolves.toBeNull();
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("restoreTransaction", () => {
+  it("limpa deleted_at e audita a restauração", async () => {
+    const id = "20384125-793f-42a3-b62e-dc54cadbf310";
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{
+        id, source: "nubank_csv", description: "Wellhub", amount_cents: "-3670",
+        occurred_at: "2026-08-05T00:00:00.000Z", category: "Lazer"
+      }] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+
+    await expect(restoreTransaction({ query } as unknown as PoolClient, id, "admin-1")).resolves.toEqual({ id });
+    expect(String(query.mock.calls[0][0])).toContain("deleted_at=NULL");
+    expect(String(query.mock.calls[1][0])).toContain("'transaction_restore'");
+    expect(query.mock.calls[1][1]?.[1]).toMatchObject({ actor_admin_id: "admin-1", amount_cents: -3670 });
+  });
+
+  it("não faz nada e não audita um lançamento que já está ativo", async () => {
+    const query = vi.fn().mockResolvedValueOnce({ rowCount: 0, rows: [] });
+    await expect(restoreTransaction(
       { query } as unknown as PoolClient,
       "20384125-793f-42a3-b62e-dc54cadbf310",
       "admin-1"

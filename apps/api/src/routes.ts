@@ -11,6 +11,7 @@ import { currentMonthPeriod, type CurrentMonthPeriod } from "./recurring.js";
 import {
   buildManualTransaction,
   insertManualTransaction,
+  restoreTransaction,
   softDeleteTransaction,
   TransactionUpdateSchema
 } from "./transaction-management.js";
@@ -242,6 +243,26 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return ids;
     });
     return { ok: true, deleted: deletedIds.length, ids: deletedIds };
+  });
+
+  app.post("/transactions/:id/restore", { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const result = await transaction((client) => restoreTransaction(client, id, request.adminId!));
+    if (!result) return reply.code(404).send({ error: "Lançamento não encontrado ou já está ativo" });
+    return { ok: true, id: result.id };
+  });
+
+  app.post("/transactions/bulk-restore", { preHandler: requireAuth }, async (request) => {
+    const input = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).strict().parse(request.body);
+    const restoredIds = await transaction(async (client) => {
+      const ids: string[] = [];
+      for (const id of input.ids) {
+        const outcome = await restoreTransaction(client, id, request.adminId!);
+        if (outcome) ids.push(outcome.id);
+      }
+      return ids;
+    });
+    return { ok: true, restored: restoredIds.length, ids: restoredIds };
   });
 
   app.get("/reconciliations/candidates", { preHandler: requireAuth }, async () => {
