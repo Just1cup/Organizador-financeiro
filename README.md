@@ -20,9 +20,10 @@ Assistente financeiro pessoal, privado e executado na sua própria máquina. O M
 ## Inicialização
 
 1. Copie `.env.example` para `.env`.
-2. Troque `POSTGRES_PASSWORD`, `SESSION_SECRET` e `INTERNAL_TOKEN` por valores aleatórios longos.
-3. Para acesso por outro aparelho, defina `APP_HOST` como o nome DNS ou IP reservado da máquina.
-4. Execute:
+2. Gere segredos reais para `SESSION_SECRET` e `INTERNAL_TOKEN` (`openssl rand -hex 32` para cada) e troque `POSTGRES_PASSWORD`. A API se recusa a iniciar se qualquer um desses ainda estiver com o valor de exemplo do template.
+3. Defina `MONTHLY_SALARY_CENTS` com o valor real do seu salário em centavos — não há valor padrão embutido no código.
+4. Para acesso por outro aparelho, defina `APP_HOST` como o nome DNS ou IP reservado da máquina; a API usa esse mesmo valor para restringir CORS à sua própria origem.
+5. Execute:
 
 ```bash
 docker compose up --build
@@ -72,6 +73,20 @@ docker build --target build -f apps/api/Dockerfile .
 ```
 
 As tabelas são criadas de forma idempotente pela API ao iniciar. Dados, modelos e sessão do WhatsApp vivem apenas nos volumes locais do Compose.
+
+## Segurança
+
+Controles aplicados, referenciando o [OWASP Top 10 Proactive Controls](https://top10proactive.owasp.org/):
+
+- **C1 Implement Access Control** — todas as rotas que tocam dados leem `requireAuth` (sessão) ou `x-internal-token` (comunicação interna api↔whatsapp); exclusão/edição sempre checam posse via `WHERE id=... AND deleted_at IS NULL` antes de agir.
+- **C2 Use Cryptography Properly** — senha com Argon2id; sessão é um token aleatório de 256 bits, armazenado no banco só como hash; cookie `httpOnly`, `Secure` (produção) e `SameSite=Strict`.
+- **C3 Validate Input, Handle Errors** — todo body/query/param é validado por schema Zod antes de tocar no banco; erros de validação retornam 400 genérico, exceções inesperadas retornam 500 sem stack trace ao cliente.
+- **C4/C5 Secure by Default** — `SESSION_SECRET`/`INTERNAL_TOKEN` precisam de 32+ caracteres e a API recusa o boot se ainda estiverem com o valor de exemplo do template; `MONTHLY_SALARY_CENTS` não tem default (precisa ser definido explicitamente); CORS restrito à origem configurada em `APP_HOST` (sem `Access-Control-Allow-Origin: *`); nenhum serviço interno (`postgres`, `whatsapp`, `ollama`) expõe porta ao host, só a `caddy` atrás de TLS.
+- **C6 Keep Components Updated** — dependências pinadas por faixa semver nos `package.json`; sem serviços expostos além do necessário.
+- **C7 Rate limiting / brute force** — `@fastify/rate-limit` global (300 req/min por IP) e limite dedicado de 5 tentativas/min em `/auth/login` e `/auth/bootstrap`.
+- **C10 Leverage Browser Security Features** — Caddy envia `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` e `Strict-Transport-Security` em toda resposta.
+
+Logs do worker do WhatsApp e da API nunca registram texto de mensagem, telefone, nome ou identificador completo (ver `docker compose logs -f whatsapp api`).
 
 ## Limites atuais do MVP
 

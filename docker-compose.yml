@@ -28,8 +28,9 @@ services:
       OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-qwen2.5vl:7b}
       WHATSAPP_URL: http://whatsapp:3101
       INTERNAL_TOKEN: ${INTERNAL_TOKEN:-development-internal-token}
-      MONTHLY_SALARY_CENTS: ${MONTHLY_SALARY_CENTS:-300000}
+      MONTHLY_SALARY_CENTS: ${MONTHLY_SALARY_CENTS:?defina o valor real do seu salário mensal, em centavos, no .env}
       APP_TIME_ZONE: ${APP_TIME_ZONE:-America/Sao_Paulo}
+      APP_HOST: ${APP_HOST:-localhost}
       NODE_ENV: production
     depends_on:
       postgres:
@@ -61,8 +62,14 @@ services:
     shm_size: 1gb
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:rocm
     restart: unless-stopped
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
     environment:
       OLLAMA_KEEP_ALIVE: "0"
       OLLAMA_NUM_PARALLEL: "1"
@@ -75,7 +82,7 @@ services:
       retries: 18
 
   ollama-setup:
-    image: ollama/ollama:latest
+    image: ollama/ollama:rocm
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command:

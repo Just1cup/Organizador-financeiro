@@ -1,16 +1,46 @@
-import { ArrowUp, Bot, BrainCircuit, CircleAlert, Sparkles, UserRound } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { ArrowUp, Bot, BrainCircuit, CircleAlert, Eraser, Sparkles, UserRound } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { AiStatus, DashboardData } from "../types";
 import { Card } from "../components/ui";
 
 type Message = { role: "user" | "assistant"; text: string; source?: string };
 const prompts = ["Quanto gastei por categoria?", "Como está meu orçamento?", "Quais gastos parecem recorrentes?"];
+const WELCOME_MESSAGE: Message = { role: "assistant", text: "Olá! Posso analisar seus lançamentos, categorias, tetos e recorrências. Os cálculos vêm do motor financeiro; eu ajudo a interpretá-los." };
+const HISTORY_KEY = "fluxo.assistant.history.v1";
+const HISTORY_LIMIT = 100;
+
+function isMessage(value: unknown): value is Message {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (candidate.role === "user" || candidate.role === "assistant")
+    && typeof candidate.text === "string"
+    && (candidate.source === undefined || typeof candidate.source === "string");
+}
+
+function loadHistory(): Message[] {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [WELCOME_MESSAGE];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [WELCOME_MESSAGE];
+    const messages = parsed.filter(isMessage);
+    return messages.length ? messages : [WELCOME_MESSAGE];
+  } catch {
+    return [WELCOME_MESSAGE];
+  }
+}
 
 export function Assistant({ status, dashboard }: { status: AiStatus | null; dashboard: DashboardData }) {
-  const [messages, setMessages] = useState<Message[]>([{ role: "assistant", text: "Olá! Posso analisar seus lançamentos, categorias, tetos e recorrências. Os cálculos vêm do motor financeiro; eu ajudo a interpretá-los." }]);
+  const [messages, setMessages] = useState<Message[]>(loadHistory);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-HISTORY_LIMIT))); }
+    catch { /* localStorage indisponível (modo privado, cota cheia): a conversa segue funcionando só sem persistir */ }
+  }, [messages]);
+
   async function send(text = input) {
     const trimmed = text.trim(); if (!trimmed || busy) return;
     setMessages((current) => [...current, { role: "user", text: trimmed }]); setInput(""); setBusy(true);
@@ -21,9 +51,14 @@ export function Assistant({ status, dashboard }: { status: AiStatus | null; dash
     finally { setBusy(false); }
   }
   function submit(event: FormEvent) { event.preventDefault(); void send(); }
+  function clearHistory() {
+    setMessages([WELCOME_MESSAGE]);
+    try { window.localStorage.removeItem(HISTORY_KEY); } catch { /* nada a limpar se o storage já está indisponível */ }
+  }
   return <div className="screen assistant-screen">
     <header className="page-header">
       <div><h1>GranaBot IA</h1><p>Converse com seus dados sem enviá-los para a nuvem.</p></div>
+      <button className="text-button" type="button" onClick={clearHistory}><Eraser size={15}/>Limpar conversa</button>
     </header>
     <Card className="assistant-header"><span className="bot-orb"><Bot/></span><span><small>GranaBot</small><strong>Seu copiloto financeiro</strong><em><i/> {status?.online && status.installed ? `${status.model} pronto` : status?.online ? "Baixando modelo local" : "Modo determinístico"}</em></span><span className="analytic"><BrainCircuit size={14}/> Analítico</span></Card>
     {!status?.online || !status.installed ? <div className="ai-notice"><CircleAlert size={18}/><span><strong>{status?.online ? "Modelo ainda não instalado" : "Ollama está offline"}</strong> O chat continuará exibindo resumos calculados pelo backend.</span></div> : null}

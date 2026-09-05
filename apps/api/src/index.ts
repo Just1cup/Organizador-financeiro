@@ -1,6 +1,7 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { config } from "./config.js";
@@ -9,9 +10,12 @@ import { registerAuth } from "./auth.js";
 import { registerRoutes } from "./routes.js";
 import { ensureMonthlySalary } from "./recurring.js";
 
-const app = Fastify({ logger: true, bodyLimit: 26 * 1024 * 1024 });
+const allowedOrigins = [`https://${config.APP_HOST}`, `http://${config.APP_HOST}`];
+
+const app = Fastify({ logger: true, bodyLimit: 26 * 1024 * 1024, trustProxy: true });
 await app.register(cookie);
-await app.register(cors, { origin: true, credentials: true });
+await app.register(cors, { origin: allowedOrigins, credentials: true });
+await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
 await app.register(multipart);
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof ZodError) return reply.code(400).send({ error: "Dados inválidos", details: error.flatten() });
