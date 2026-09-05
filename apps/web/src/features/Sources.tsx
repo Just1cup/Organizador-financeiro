@@ -1,9 +1,9 @@
-import { CalendarDays, Check, FileSpreadsheet, Landmark, MessageCircle, Plus, RefreshCw, Sparkles, Tags, Target, UploadCloud, WalletCards } from "lucide-react";
-import { ChangeEvent, DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { CalendarDays, Check, FileSpreadsheet, Landmark, MessageCircle, Plus, RefreshCw, Sparkles, Target, UploadCloud, WalletCards } from "lucide-react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { CategoryPicker } from "../components/CategoryPicker";
 import { api, money } from "../lib/api";
-import type { Category, DashboardData, MergeSuggestion } from "../types";
-import { Card, EmptyState, Progress, SectionTitle, Spinner } from "../components/ui";
+import type { Category, DashboardData } from "../types";
+import { Card, EmptyState, Progress, SectionTitle } from "../components/ui";
 
 type Preview = { filename: string; source: string; total: number; preview: Array<{ description: string; amountCents: number; occurredAt: string; name: string; is_new: boolean }> };
 type HistoryMode = "latest" | "all";
@@ -145,8 +145,6 @@ export function Sources({ data, onChanged }: { data: DashboardData; onChanged: (
       const percent = budget.limit_cents ? budget.spent_cents / budget.limit_cents * 100 : 0;
       return <div className="budget" key={budget.category}><div><strong>{budget.category}</strong><span>{Math.round(percent)}%</span></div><Progress value={percent}/><small><b>{money(budget.spent_cents)} usados</b><span>de {money(budget.limit_cents)}</span></small></div>;
     })}</Card> : <EmptyState title="Nenhum teto definido" text="Crie limites por categoria para acompanhar o mês."/>}
-
-    <CategoriesPanel onChanged={onChanged}/>
 
     <SectionTitle icon={<Sparkles/>} action={<span className="section-meta">Tempo real</span>}>Canais de ingestão</SectionTitle>
     <div className="source-cards">
@@ -303,95 +301,5 @@ function BudgetForm({ onDone }: { onDone: () => void }) {
     <label>Limite mensal (R$)<input name="limit" type="number" min="1" step="0.01" required placeholder="800,00"/></label>
     {error ? <div className="form-error">{error}</div> : null}
     <button className="button primary" disabled={busy}>{busy ? "Salvando…" : "Salvar teto"}</button>
-  </form></Card>;
-}
-
-function CategoriesPanel({ onChanged }: { onChanged: () => void }) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [suggestions, setSuggestions] = useState<MergeSuggestion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [mergeBusy, setMergeBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [nextCategories, nextSuggestions] = await Promise.all([
-        api<Category[]>("/categories"),
-        api<MergeSuggestion[]>("/categories/merge-suggestions")
-      ]);
-      setCategories(nextCategories); setSuggestions(nextSuggestions);
-    } catch { /* painel de apoio: uma falha aqui não deve travar Metas & Fontes */ }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
-
-  async function mergeGroup(group: MergeSuggestion) {
-    const key = group.names.join("|");
-    const into = [...group.names].sort((left, right) => right.length - left.length)[0];
-    const from = group.names.filter((name) => name !== into);
-    setMergeBusy(key); setMessage("");
-    try {
-      const result = await api<{ transactions_moved: number }>("/categories/merge", { method: "POST", body: JSON.stringify({ into, from }) });
-      setMessage(`Categorias fundidas em "${into}" • ${result.transactions_moved} lançamentos movidos.`);
-      await load();
-      onChanged();
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "Não foi possível fundir as categorias.");
-    } finally {
-      setMergeBusy(null);
-    }
-  }
-
-  const topLevel = categories.filter((item) => !item.parent_name);
-  const childrenOf = (name: string) => categories.filter((item) => item.parent_name === name);
-
-  return <>
-    <SectionTitle icon={<Tags/>} action={<button className="text-button" onClick={() => setShowCreate(!showCreate)}>Nova categoria <Plus size={14}/></button>}>Categorias</SectionTitle>
-    {showCreate ? <CategoryCreateForm categories={categories} onDone={() => { setShowCreate(false); void load(); }}/> : null}
-    {message ? <div className="import-message"><Check size={17}/>{message}</div> : null}
-    {suggestions.length ? <Card className="merge-suggestions">
-      <strong>Possíveis duplicidades</strong>
-      {suggestions.map((group) => {
-        const key = group.names.join("|");
-        return <div className="merge-suggestion-row" key={key}>
-          <span>{group.names.join(" · ")}</span>
-          <button className="button secondary" type="button" disabled={mergeBusy === key} onClick={() => void mergeGroup(group)}>
-            {mergeBusy === key ? "Fundindo…" : "Fundir"}
-          </button>
-        </div>;
-      })}
-    </Card> : null}
-    {loading ? <Spinner label="Carregando categorias"/> : topLevel.length ? <Card className="category-tree">
-      {topLevel.map((item) => <div className="category-tree-row" key={item.name}>
-        <div><strong>{item.name}</strong><small>{item.transaction_count} {item.transaction_count === 1 ? "lançamento" : "lançamentos"}{item.is_system ? " · padrão" : ""}</small></div>
-        {childrenOf(item.name).length ? <div className="category-tree-children">{childrenOf(item.name).map((child) => <span key={child.name}>{child.name} <i>{child.transaction_count}</i></span>)}</div> : null}
-      </div>)}
-    </Card> : <EmptyState title="Nenhuma categoria" text="As categorias aparecem automaticamente conforme você lança ou importa dados."/>}
-  </>;
-}
-
-function CategoryCreateForm({ categories, onDone }: { categories: Category[]; onDone: () => void }) {
-  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setError("");
-    const form = new FormData(event.currentTarget);
-    const parentName = String(form.get("parent_name") || "");
-    try {
-      await api("/categories", { method: "POST", body: JSON.stringify({ name: form.get("name"), ...(parentName ? { parent_name: parentName } : {}) }) });
-      onDone();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha ao criar categoria"); }
-    finally { setBusy(false); }
-  }
-  return <Card><form className="goal-form" onSubmit={submit}>
-    <label>Nome<input name="name" placeholder="Ex.: Pet" required minLength={2} maxLength={80}/></label>
-    <label>Subtipo de (opcional)<select name="parent_name" defaultValue="">
-      <option value="">Categoria principal</option>
-      {categories.filter((item) => !item.parent_name).map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
-    </select></label>
-    {error ? <div className="form-error">{error}</div> : null}
-    <button className="button primary" disabled={busy}>{busy ? "Criando…" : "Criar categoria"}</button>
   </form></Card>;
 }

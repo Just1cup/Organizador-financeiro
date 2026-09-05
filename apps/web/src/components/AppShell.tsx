@@ -7,11 +7,12 @@ import {
   Repeat2,
   ShieldCheck,
   Sparkles,
+  Tags,
   type LucideIcon
 } from "lucide-react";
 import type { PropsWithChildren } from "react";
 
-export type Tab = "overview" | "transactions" | "reconciliation" | "assistant" | "sources";
+export type Tab = "overview" | "transactions" | "categories" | "reconciliation" | "assistant" | "sources";
 
 type NavigationItem = {
   id: Tab;
@@ -24,6 +25,7 @@ type NavigationItem = {
 const tabs: NavigationItem[] = [
   { id: "overview", label: "Visão geral", mobileLabel: "Visão", description: "Resumo do mês", Icon: LayoutDashboard },
   { id: "transactions", label: "Lançamentos", mobileLabel: "Lançamentos", description: "Entradas e saídas", Icon: ReceiptText },
+  { id: "categories", label: "Categorias", mobileLabel: "Categorias", description: "Organize e ensine", Icon: Tags },
   { id: "reconciliation", label: "Conciliação", mobileLabel: "Conciliar", description: "Revisar duplicidades", Icon: Repeat2 },
   { id: "assistant", label: "GranaBot", mobileLabel: "Assistente", description: "Análises com IA local", Icon: Bot },
   { id: "sources", label: "Metas e fontes", mobileLabel: "Fontes", description: "Integrações e planos", Icon: Landmark }

@@ -4,6 +4,7 @@ import { Spinner } from "./components/ui";
 import { AuthScreen } from "./features/AuthScreen";
 import { Dashboard } from "./features/Dashboard";
 import { Transactions } from "./features/Transactions";
+import { Categories } from "./features/Categories";
 import { Reconciliation } from "./features/Reconciliation";
 import { Assistant } from "./features/Assistant";
 import { Sources } from "./features/Sources";
@@ -78,6 +79,7 @@ export function App() {
       onResetMonth={dashboardMonth ? () => setDashboardMonth(null) : undefined}
     /> : null}
     {tab === "transactions" ? <Transactions onChanged={load} openCreateSignal={openCreateSignal}/> : null}
+    {tab === "categories" ? <Categories onChanged={load}/> : null}
     {tab === "reconciliation" ? <Reconciliation onChanged={load}/> : null}
     {tab === "assistant" ? <Assistant status={ai} dashboard={dashboard}/> : null}
     {tab === "sources" ? <Sources data={dashboard} onChanged={load}/> : null}

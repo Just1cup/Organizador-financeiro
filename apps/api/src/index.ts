@@ -9,6 +9,7 @@ import { migrate, pool } from "./db.js";
 import { registerAuth } from "./auth.js";
 import { registerRoutes } from "./routes.js";
 import { ensureMonthlySalary } from "./recurring.js";
+import { warmOllama } from "./ollama.js";
 
 const allowedOrigins = [`https://${config.APP_HOST}`, `http://${config.APP_HOST}`];
 
@@ -29,6 +30,7 @@ await migrate();
 await registerAuth(app);
 await registerRoutes(app);
 await app.listen({ host: "0.0.0.0", port: config.PORT });
+void warmOllama(app.log);
 
 const ensureRecurringIncome = async () => {
   try {

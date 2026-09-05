@@ -363,7 +363,7 @@ export function Transactions({ onChanged, openCreateSignal = 0 }: { onChanged: (
     />
 
     <div className={`toast-region ${toast ? "visible" : ""}`} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true">
-      {toast ? <div className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>{toast.tone === "success" ? <Check size={17}/> : null}<span>{toast.text}</span>{toast.onUndo ? <button className="toast-undo" type="button" onClick={() => { toast.onUndo?.(); setToast(null); }}>Desfazer</button> : null}<button type="button" aria-label="Fechar aviso" onClick={() => setToast(null)}><X size={16}/></button></div> : null}
+      {toast ? <div key={`${toast.tone}-${toast.text}`} className={`toast ${toast.tone}`} role={toast.tone === "error" ? "alert" : "status"}>{toast.tone === "success" ? <Check size={17}/> : null}<span>{toast.text}</span>{toast.onUndo ? <button className="toast-undo" type="button" onClick={() => { toast.onUndo?.(); setToast(null); }}>Desfazer</button> : null}<button type="button" aria-label="Fechar aviso" onClick={() => setToast(null)}><X size={16}/></button></div> : null}
     </div>
   </div>;
 }
