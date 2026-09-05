@@ -1,5 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
-import { currentMonthPeriod, ensureMonthlySalary, monthlySalaryOccurrence, type Queryable } from "./recurring.js";
+import { currentMonthPeriod, ensureMonthlySalary, monthlySalaryOccurrence, monthPeriod, type Queryable } from "./recurring.js";
+
+describe("monthPeriod", () => {
+  it("usa o fim do próprio mês como asOf quando o mês já encerrou", () => {
+    expect(monthPeriod("2026-07", "America/Sao_Paulo", new Date("2026-09-05T12:00:00.000Z"))).toEqual({
+      month: "2026-07",
+      startAt: "2026-07-01T03:00:00.000Z",
+      endAt: "2026-08-01T03:00:00.000Z",
+      asOf: "2026-08-01T03:00:00.000Z"
+    });
+  });
+
+  it("trava asOf em now para o mês atual, sem contar lançamentos futuros", () => {
+    const period = monthPeriod("2026-09", "America/Sao_Paulo", new Date("2026-09-05T12:00:00.000Z"));
+    expect(period.asOf).toBe("2026-09-05T12:00:00.000Z");
+  });
+
+  it("rejeita um formato de mês inválido", () => {
+    expect(() => monthPeriod("2026-13", "America/Sao_Paulo", new Date())).toThrow(/mês inválido/i);
+    expect(() => monthPeriod("lixo", "America/Sao_Paulo", new Date())).toThrow(/mês inválido/i);
+  });
+});
 
 describe("currentMonthPeriod", () => {
   it("respeita a virada local de São Paulo e fornece limites UTC", () => {

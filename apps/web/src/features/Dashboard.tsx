@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Bot,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   CircleDollarSign,
   Plus,
@@ -35,7 +36,7 @@ function TransactionRow({ item, onManage }: { item: Transaction; onManage: () =>
   </div>;
 }
 
-function CategoryOverview({ data }: { data: DashboardData }) {
+function CategoryOverview({ data, onNavigate }: { data: DashboardData; onNavigate: (page: "categories") => void }) {
   const items = data.categories.slice(0, 6);
   const total = items.reduce((sum, item) => sum + item.total_cents, 0);
   let cursor = 0;
@@ -47,7 +48,7 @@ function CategoryOverview({ data }: { data: DashboardData }) {
   const chartStyle = { "--category-chart": stops.length ? `conic-gradient(${stops.join(", ")})` : "conic-gradient(#253344 0 100%)" } as CSSProperties;
 
   return <section className="category-overview" aria-labelledby="category-heading">
-    <SectionTitle icon={<CircleDollarSign/>} action={items.length ? <span className="section-meta">{items.length} categorias</span> : undefined}><span id="category-heading">Gastos por categoria</span></SectionTitle>
+    <SectionTitle icon={<CircleDollarSign/>} action={<button className="text-button" type="button" onClick={() => onNavigate("categories")}>Gerenciar <ArrowRight size={15}/></button>}><span id="category-heading">Gastos por categoria</span></SectionTitle>
     {items.length ? <div className="category-layout">
       <div className="donut" style={chartStyle} role="img" aria-label={`Total de saídas: ${money(total)}`}><span><b>{money(total)}</b><small>em saídas</small></span></div>
       <div className="category-list">{items.map((item, index) => <div className="category-row" key={item.category}>
@@ -62,18 +63,32 @@ function CategoryOverview({ data }: { data: DashboardData }) {
 export function Dashboard({
   data,
   onNavigate,
-  onNewTransaction
+  onNewTransaction,
+  onChangeMonth,
+  onResetMonth
 }: {
   data: DashboardData;
-  onNavigate: (page: "assistant" | "sources" | "transactions") => void;
+  onNavigate: (page: "assistant" | "sources" | "transactions" | "categories") => void;
   onNewTransaction: () => void;
+  onChangeMonth: (delta: number) => void;
+  onResetMonth?: () => void;
 }) {
   const { summary } = data;
   const monthNet = summary.income_cents - summary.expense_cents;
+  const todayMonth = new Date().toISOString().slice(0, 7);
+  const isCurrentMonth = data.month >= todayMonth;
 
   return <div className="screen dashboard-screen">
     <header className="page-header dashboard-heading">
-      <div><h1>Visão geral</h1><p><CalendarDays size={16}/> {monthLabel(data.month)} · dados sincronizados</p></div>
+      <div>
+        <h1>Visão geral</h1>
+        <div className="month-nav">
+          <button type="button" aria-label="Mês anterior" onClick={() => onChangeMonth(-1)}><ChevronLeft size={16}/></button>
+          <p><CalendarDays size={16}/> {monthLabel(data.month)}</p>
+          <button type="button" aria-label="Próximo mês" disabled={isCurrentMonth} onClick={() => onChangeMonth(1)}><ChevronRight size={16}/></button>
+          {onResetMonth ? <button className="text-button" type="button" onClick={onResetMonth}>Mês atual</button> : null}
+        </div>
+      </div>
       <button className="button primary page-primary" type="button" onClick={onNewTransaction}><Plus size={19}/> Novo lançamento</button>
     </header>
 
@@ -85,7 +100,7 @@ export function Dashboard({
     </Card>
 
     <div className="insight-grid">
-      <CategoryOverview data={data}/>
+      <CategoryOverview data={data} onNavigate={onNavigate}/>
       <section className="budget-overview">
         <SectionTitle action={<button className="text-button" type="button" onClick={() => onNavigate("sources")}>Gerenciar <ArrowRight size={15}/></button>} icon={<WalletCards/>}>Tetos por categoria</SectionTitle>
         {data.budgets.length ? <div className="budget-list">{data.budgets.slice(0, 5).map((budget) => {

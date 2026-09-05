@@ -97,3 +97,19 @@ export async function softDeleteTransaction(client: PoolClient, id: string, admi
   }]);
   return { id };
 }
+
+export async function restoreTransaction(client: PoolClient, id: string, adminId: string): Promise<{ id: string } | null> {
+  const restored = await client.query(`UPDATE transactions SET deleted_at=NULL,updated_at=now()
+    WHERE id=$1 AND deleted_at IS NOT NULL RETURNING id,source,description,amount_cents,occurred_at,category`, [id]);
+  if (!restored.rowCount) return null;
+  const row = restored.rows[0];
+  await client.query("INSERT INTO audit_log(action,entity_type,entity_id,detail) VALUES('transaction_restore','transaction',$1,$2)", [id, {
+    actor_admin_id: adminId,
+    source: row.source,
+    description: row.description,
+    amount_cents: Number(row.amount_cents),
+    occurred_at: row.occurred_at,
+    category: row.category
+  }]);
+  return { id };
+}

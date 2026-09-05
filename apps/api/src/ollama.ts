@@ -18,6 +18,36 @@ export async function ollamaStatus(): Promise<OllamaStatus> {
   }
 }
 
+type Logger = { info: (msg: string) => void; warn: (obj: unknown, msg: string) => void };
+
+async function warmOne(model: string, timeout: number): Promise<void> {
+  const response = await ollamaFetch("/api/generate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model, prompt: "oi", stream: false, keep_alive: 0, options: { num_predict: 1 } })
+  }, timeout);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+}
+
+/**
+ * Dispara uma geração mínima pra cada modelo assim que a API sobe, pra forçar o Ollama a
+ * carregar os pesos e (na RX 6600, que roda via HSA_OVERRIDE_GFX_VERSION) compilar o cache
+ * de kernels ROCm antes que um usuário real bata numa consulta e estoure o timeout de
+ * ollamaFetch. Não bloqueia o startup — deve ser chamado sem `await`.
+ */
+export async function warmOllama(log: Logger): Promise<void> {
+  const timeout = 180_000;
+  for (const model of [config.OLLAMA_TEXT_MODEL, config.OLLAMA_VISION_MODEL]) {
+    const start = Date.now();
+    try {
+      await warmOne(model, timeout);
+      log.info(`Ollama aquecido (${model}) em ${Date.now() - start}ms`);
+    } catch (error) {
+      log.warn({ err: error }, `Falha ao aquecer o Ollama para ${model} — a primeira consulta real pode expirar`);
+    }
+  }
+}
+
 export async function explainFinancialContext(question: string, context: unknown): Promise<string> {
   const response = await ollamaFetch("/api/chat", {
     method: "POST",

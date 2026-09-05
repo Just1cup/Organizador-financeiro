@@ -39,7 +39,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     return { initialized: initialized.rows[0].initialized, authenticated: session.rows[0].authenticated };
   });
 
-  app.post("/auth/bootstrap", async (request, reply) => {
+  app.post("/auth/bootstrap", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
     const existing = await pool.query("SELECT EXISTS(SELECT 1 FROM admins) initialized");
     if (existing.rows[0].initialized) return reply.code(409).send({ error: "Administrador já configurado" });
     const password = config.ADMIN_PASSWORD || credentials.parse(request.body).password;
@@ -48,7 +48,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  app.post("/auth/login", async (request, reply) => {
+  app.post("/auth/login", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (request, reply) => {
     const { password } = credentials.parse(request.body);
     const result = await pool.query("SELECT id,password_hash FROM admins LIMIT 1");
     if (!result.rowCount || !(await verify(result.rows[0].password_hash, password))) return reply.code(401).send({ error: "Senha incorreta" });

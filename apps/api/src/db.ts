@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   import_id uuid REFERENCES imports(id) ON DELETE SET NULL,
   source text NOT NULL,
   external_id text NOT NULL,
-  fingerprint text NOT NULL UNIQUE,
+  fingerprint text NOT NULL,
   description text NOT NULL,
   merchant text,
   amount_cents bigint NOT NULL,
@@ -44,9 +44,16 @@ CREATE TABLE IF NOT EXISTS transactions (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+-- Excluir um lançamento é lógico (deleted_at), não físico: preserva auditoria e o "Desfazer".
+-- Mas a unicidade do fingerprint só deve valer entre lançamentos ATIVOS — senão, reimportar o
+-- mesmo extrato depois de excluir uma linha fica bloqueado para sempre (ON CONFLICT silencioso).
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_fingerprint_key;
+CREATE UNIQUE INDEX IF NOT EXISTS transactions_fingerprint_active_idx ON transactions(fingerprint) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS transactions_occurred_at_idx ON transactions(occurred_at DESC);
 CREATE INDEX IF NOT EXISTS transactions_category_idx ON transactions(category);
 CREATE INDEX IF NOT EXISTS transactions_active_occurred_at_idx ON transactions(occurred_at DESC) WHERE deleted_at IS NULL;
+-- Estas duas, ao contrário, continuam valendo mesmo sobre linhas excluídas: excluir a mensagem
+-- de um mês do WhatsApp ou o salário automático de um mês é permanente por desenho (ver README).
 CREATE UNIQUE INDEX IF NOT EXISTS transactions_whatsapp_external_id_idx ON transactions(source,external_id) WHERE source='whatsapp';
 CREATE UNIQUE INDEX IF NOT EXISTS transactions_monthly_salary_idx ON transactions(source,external_id) WHERE source='manual' AND external_id LIKE 'recurring:salary:%';
 CREATE TABLE IF NOT EXISTS reconciliations (

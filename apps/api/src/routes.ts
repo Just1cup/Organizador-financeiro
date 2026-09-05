@@ -7,10 +7,11 @@ import { parseCsv } from "./csv.js";
 import { pool, transaction } from "./db.js";
 import { explainFinancialContext, ollamaStatus } from "./ollama.js";
 import { config } from "./config.js";
-import { currentMonthPeriod, type CurrentMonthPeriod } from "./recurring.js";
+import { currentMonthPeriod, monthPeriod, type CurrentMonthPeriod } from "./recurring.js";
 import {
   buildManualTransaction,
   insertManualTransaction,
+  restoreTransaction,
   softDeleteTransaction,
   TransactionUpdateSchema
 } from "./transaction-management.js";
@@ -128,8 +129,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return reply.code(result.inserted ? 201 : 200).send(result);
   });
 
-  app.get("/dashboard", { preHandler: requireAuth }, async () => {
-    const period = currentMonthPeriod(new Date(), config.APP_TIME_ZONE);
+  app.get("/dashboard", { preHandler: requireAuth }, async (request) => {
+    const { month } = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional() }).parse(request.query);
+    const period = month ? monthPeriod(month, config.APP_TIME_ZONE, new Date()) : currentMonthPeriod(new Date(), config.APP_TIME_ZONE);
     const [context, budgets, goals, recent, pending] = await Promise.all([
       financialContext(period),
       pool.query(`SELECT b.category, b.limit_cents, COALESCE(ABS(SUM(t.amount_cents)),0) spent_cents
@@ -204,7 +206,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         const category = await resolveTransactionCategory(client, { description: row.description, merchant: row.merchant, category: row.category });
         const fingerprint = transactionFingerprint(row);
         const saved = await client.query(`INSERT INTO transactions(import_id,source,external_id,fingerprint,description,merchant,amount_cents,occurred_at,payment_method,category,raw)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(fingerprint) DO NOTHING`,
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING`,
           [imported.rows[0].id, row.source, row.externalId, fingerprint, row.description, row.merchant, row.amountCents, row.occurredAt, row.paymentMethod, category, row.raw]);
         inserted += saved.rowCount || 0;
       }
@@ -229,6 +231,39 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const result = await transaction((client) => softDeleteTransaction(client, id, request.adminId!));
     if (!result) return reply.code(404).send({ error: "Lançamento não encontrado" });
     return { ok: true, id: result.id };
+  });
+
+  app.post("/transactions/bulk-delete", { preHandler: requireAuth }, async (request) => {
+    const input = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).strict().parse(request.body);
+    const deletedIds = await transaction(async (client) => {
+      const ids: string[] = [];
+      for (const id of input.ids) {
+        const outcome = await softDeleteTransaction(client, id, request.adminId!);
+        if (outcome) ids.push(outcome.id);
+      }
+      return ids;
+    });
+    return { ok: true, deleted: deletedIds.length, ids: deletedIds };
+  });
+
+  app.post("/transactions/:id/restore", { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const result = await transaction((client) => restoreTransaction(client, id, request.adminId!));
+    if (!result) return reply.code(404).send({ error: "Lançamento não encontrado ou já está ativo" });
+    return { ok: true, id: result.id };
+  });
+
+  app.post("/transactions/bulk-restore", { preHandler: requireAuth }, async (request) => {
+    const input = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).strict().parse(request.body);
+    const restoredIds = await transaction(async (client) => {
+      const ids: string[] = [];
+      for (const id of input.ids) {
+        const outcome = await restoreTransaction(client, id, request.adminId!);
+        if (outcome) ids.push(outcome.id);
+      }
+      return ids;
+    });
+    return { ok: true, restored: restoredIds.length, ids: restoredIds };
   });
 
   app.get("/reconciliations/candidates", { preHandler: requireAuth }, async () => {
